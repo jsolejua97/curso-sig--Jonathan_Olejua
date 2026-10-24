@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hospitales de Boyacá | Mapa SIG</title>
+  <title>Veredas de Boyacá | Mapa SIG</title>
 
   <link
     rel="stylesheet"
@@ -13,6 +13,7 @@
 
   <style>
     html, body, #mapa {
+      width: 100%;
       height: 100%;
       margin: 0;
     }
@@ -22,19 +23,26 @@
       z-index: 1000;
       top: 12px;
       left: 60px;
-      padding: 10px 14px;
+      max-width: calc(100% - 110px);
+      padding: 12px 16px;
       background: white;
-      border-radius: 6px;
-      box-shadow: 0 1px 5px #888;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px #888;
       font-family: Arial, sans-serif;
+    }
+
+    #estado {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #444;
     }
   </style>
 </head>
 
 <body>
   <div class="titulo">
-    <strong>Hospitales de Boyacá</strong><br>
-    <small>Mapa web con Leaflet y datos geográficos</small>
+    <strong>Veredas de Boyacá</strong>
+    <div id="estado">Iniciando mapa...</div>
   </div>
 
   <div id="mapa"></div>
@@ -42,59 +50,105 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+    const estado = document.getElementById("estado");
+
+    // 1. Crear primero el mapa base
     const mapa = L.map("mapa").setView([5.54, -73.36], 8);
 
+    // 2. Agregar el mapa de OpenStreetMap
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors"
     }).addTo(mapa);
 
+    // 3. Servicio ArcGIS de veredas de Boyacá
     const url =
       "https://services6.arcgis.com/Ex2fmFOuTOHRZtML/ArcGIS/rest/services/" +
-      "Hospitales_Boyac%C3%A1/FeatureServer/0/query" +
-      "?where=1%3D1&outFields=*&outSR=4326&f=geojson";
+      "Veredas_Boyaca_2024/FeatureServer/0/query" +
+      "?where=1%3D1" +
+      "&outFields=*" +
+      "&returnGeometry=true" +
+      "&outSR=4326" +
+      "&f=geojson" +
+      "&resultRecordCount=2000";
+
+    estado.textContent = "Consultando servicio de veredas...";
 
     fetch(url)
       .then(respuesta => {
         if (!respuesta.ok) {
-          throw new Error("Error HTTP: " + respuesta.status);
+          throw new Error("Error HTTP " + respuesta.status);
         }
         return respuesta.json();
       })
       .then(geojson => {
         if (geojson.error) {
-          throw new Error(JSON.stringify(geojson.error));
+          throw new Error(
+            geojson.error.message || JSON.stringify(geojson.error)
+          );
         }
 
-        const hospitales = L.geoJSON(geojson, {
-          pointToLayer: (feature, latlng) =>
-            L.circleMarker(latlng, {
-              radius: 5,
-              color: "#9b2226",
-              fillColor: "#e76f51",
-              fillOpacity: 0.85,
-              weight: 1
-            }),
+        if (
+          geojson.type !== "FeatureCollection" ||
+          !Array.isArray(geojson.features)
+        ) {
+          throw new Error("El servicio no devolvió un GeoJSON válido.");
+        }
+
+        if (geojson.features.length === 0) {
+          estado.textContent = "El servicio no devolvió veredas.";
+          return;
+        }
+
+        // 4. Dibujar los polígonos
+        const capaVeredas = L.geoJSON(geojson, {
+          style: {
+            color: "#176b4d",
+            weight: 1,
+            fillColor: "#7bc8a4",
+            fillOpacity: 0.35
+          },
 
           onEachFeature: (feature, layer) => {
-            const propiedades = feature.properties || {};
-            const nombre = propiedades.Nombre || "Hospital sin nombre";
-            const municipio = propiedades.NOM_MPIO || "Municipio no disponible";
+            const p = feature.properties || {};
+
+            const nombre =
+              p.NOMBRE_VER || p.nombre_ver || "Vereda sin nombre";
+
+            const municipio =
+              p.NOMB_MPIO || p.nomb_mpio || "Municipio no disponible";
+
+            const departamento =
+              p.NOM_DEP || p.nom_dep || "Boyacá";
 
             layer.bindPopup(
-              `<strong>${nombre}</strong><br>${municipio}`
+              "<strong>" + nombre + "</strong><br>" +
+              municipio + ", " + departamento
             );
           }
         }).addTo(mapa);
 
-        if (hospitales.getLayers().length > 0) {
-          mapa.fitBounds(hospitales.getBounds(), { padding: [20, 20] });
+        // 5. Ajustar la vista a los polígonos recibidos
+        if (capaVeredas.getBounds().isValid()) {
+          mapa.fitBounds(capaVeredas.getBounds(), {
+            padding: [20, 20],
+            maxZoom: 11
+          });
         }
 
-        console.log("Entidades recibidas:", hospitales.getLayers().length);
+        estado.textContent =
+          "Veredas cargadas: " + geojson.features.length;
+
+        if (geojson.exceededTransferLimit) {
+          estado.textContent += " (resultado parcial)";
+        }
+
+        console.log("GeoJSON recibido:", geojson);
       })
       .catch(error => {
-        console.error("No fue posible cargar los hospitales:", error);
-        alert("No se pudieron cargar los hospitales. Revisa la consola del navegador.");
+        console.error("Error al cargar veredas:", error);
+        estado.textContent =
+          "No se pudieron cargar las veredas. Revisa la consola (F12).";
       });
   </script>
 </body>
