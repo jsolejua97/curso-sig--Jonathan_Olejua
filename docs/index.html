@@ -2,8 +2,8 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Veredas de Boyacá | Mapa SIG</title>
 
   <link
@@ -12,39 +12,49 @@
   >
 
   <style>
-    html, body, #mapa {
-      width: 100%;
-      height: 100%;
+    body {
       margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f3;
     }
 
-    .titulo {
-      position: absolute;
-      z-index: 1000;
-      top: 12px;
-      left: 60px;
-      max-width: calc(100% - 110px);
-      padding: 12px 16px;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 1px 6px #888;
-      font-family: Arial, sans-serif;
+    header {
+      background: #245c43;
+      color: white;
+      padding: 16px 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 23px;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 14px;
     }
 
     #estado {
-      margin-top: 5px;
-      font-size: 12px;
-      color: #444;
+      padding: 10px 16px;
+      background: white;
+      font-size: 14px;
+    }
+
+    #mapa {
+      width: 100%;
+      height: calc(100vh - 112px);
+      min-height: 400px;
     }
   </style>
 </head>
 
 <body>
-  <div class="titulo">
-    <strong>Veredas de Boyacá</strong>
-    <div id="estado">Iniciando mapa...</div>
-  </div>
+  <header>
+    <h1>Veredas de Boyacá</h1>
+    <p>Visualizador geográfico de límites veredales</p>
+  </header>
 
+  <div id="estado">Inicializando mapa...</div>
   <div id="mapa"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -52,103 +62,110 @@
   <script>
     const estado = document.getElementById("estado");
 
-    // 1. Crear primero el mapa base
+    // 1. Crear el mapa de Leaflet
     const mapa = L.map("mapa").setView([5.54, -73.36], 8);
 
-    // 2. Agregar el mapa de OpenStreetMap
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(mapa);
+    // 2. Mapa base de Esri: no requiere que generes una API key
+    // para este servicio público de mapas.
+    const mapaBase = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      {
+        attribution:
+          "Tiles &copy; Esri — Sources: Esri, HERE, Garmin, " +
+          "OpenStreetMap contributors, and the GIS user community",
+        maxZoom: 19
+      }
+    ).addTo(mapa);
 
-    // 3. Servicio ArcGIS de veredas de Boyacá
-    const url =
+    mapaBase.on("tileerror", function () {
+      estado.textContent =
+        "El mapa base no pudo cargar algunas imágenes. " +
+        "Verifica tu conexión o las restricciones de acceso.";
+    });
+
+    // 3. Servicio de polígonos de veredas de Boyacá
+    const baseUrl =
       "https://services6.arcgis.com/Ex2fmFOuTOHRZtML/ArcGIS/rest/services/" +
-      "Veredas_Boyaca_2024/FeatureServer/0/query" +
-      "?where=1%3D1" +
-      "&outFields=*" +
-      "&returnGeometry=true" +
-      "&outSR=4326" +
-      "&f=geojson" +
-      "&resultRecordCount=2000";
+      "Veredas_Boyaca_2024/FeatureServer/0/query";
 
-    estado.textContent = "Consultando servicio de veredas...";
+    // 4. Parámetros de consulta
+    const parametros = new URLSearchParams({
+      where: "1=1",
+      outFields: "*",
+      returnGeometry: "true",
+      outSR: "4326",
+      f: "geojson",
+      resultRecordCount: "2000"
+    });
 
+    const url = baseUrl + "?" + parametros.toString();
+
+    // 5. Consultar las veredas
     fetch(url)
-      .then(respuesta => {
+      .then(async function (respuesta) {
         if (!respuesta.ok) {
-          throw new Error("Error HTTP " + respuesta.status);
+          throw new Error("HTTP " + respuesta.status);
         }
-        return respuesta.json();
+
+        return await respuesta.json();
       })
-      .then(geojson => {
-        if (geojson.error) {
+      .then(function (datos) {
+        if (datos.error) {
           throw new Error(
-            geojson.error.message || JSON.stringify(geojson.error)
+            datos.error.message || "Error del servicio ArcGIS"
           );
         }
 
-        if (
-          geojson.type !== "FeatureCollection" ||
-          !Array.isArray(geojson.features)
-        ) {
-          throw new Error("El servicio no devolvió un GeoJSON válido.");
-        }
-
-        if (geojson.features.length === 0) {
-          estado.textContent = "El servicio no devolvió veredas.";
+        if (!datos.features || datos.features.length === 0) {
+          estado.textContent = "La consulta no devolvió veredas.";
           return;
         }
 
-        // 4. Dibujar los polígonos
-        const capaVeredas = L.geoJSON(geojson, {
-          style: {
-            color: "#176b4d",
-            weight: 1,
-            fillColor: "#7bc8a4",
-            fillOpacity: 0.35
+        // 6. Dibujar los polígonos
+        const capaVeredas = L.geoJSON(datos, {
+          style: function () {
+            return {
+              color: "#247447",
+              weight: 1,
+              fillColor: "#79bd87",
+              fillOpacity: 0.35
+            };
           },
 
-          onEachFeature: (feature, layer) => {
+          onEachFeature: function (feature, layer) {
             const p = feature.properties || {};
 
-            const nombre =
-              p.NOMBRE_VER || p.nombre_ver || "Vereda sin nombre";
+            const contenido =
+              "<strong>Vereda:</strong> " +
+              (p.NOMBRE_VER || "No disponible") +
+              "<br><strong>Municipio:</strong> " +
+              (p.NOMB_MPIO || "No disponible") +
+              "<br><strong>Departamento:</strong> " +
+              (p.NOM_DEP || "Boyacá") +
+              (p.AREA_HA != null
+                ? "<br><strong>Área (ha):</strong> " +
+                  Number(p.AREA_HA).toLocaleString("es-CO")
+                : "");
 
-            const municipio =
-              p.NOMB_MPIO || p.nomb_mpio || "Municipio no disponible";
-
-            const departamento =
-              p.NOM_DEP || p.nom_dep || "Boyacá";
-
-            layer.bindPopup(
-              "<strong>" + nombre + "</strong><br>" +
-              municipio + ", " + departamento
-            );
+            layer.bindPopup(contenido);
           }
         }).addTo(mapa);
 
-        // 5. Ajustar la vista a los polígonos recibidos
-        if (capaVeredas.getBounds().isValid()) {
-          mapa.fitBounds(capaVeredas.getBounds(), {
-            padding: [20, 20],
-            maxZoom: 11
-          });
+        // 7. Ajustar el mapa a los polígonos
+        if (capaVeredas.getLayers().length > 0) {
+          mapa.fitBounds(capaVeredas.getBounds());
         }
 
         estado.textContent =
-          "Veredas cargadas: " + geojson.features.length;
-
-        if (geojson.exceededTransferLimit) {
-          estado.textContent += " (resultado parcial)";
-        }
-
-        console.log("GeoJSON recibido:", geojson);
+          "Veredas cargadas: " + datos.features.length +
+          (datos.features.length >= 2000
+            ? ". La consulta puede tener más registros."
+            : ".");
       })
-      .catch(error => {
-        console.error("Error al cargar veredas:", error);
+      .catch(function (error) {
+        console.error("Error al cargar las veredas:", error);
         estado.textContent =
-          "No se pudieron cargar las veredas. Revisa la consola (F12).";
+          "Error al cargar las veredas: " + error.message;
       });
   </script>
 </body>
