@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hospitales de Boyacá | Mapa SIG</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+
+  <style>
+    html, body, #mapa {
+      height: 100%;
+      margin: 0;
+    }
+
+    .titulo {
+      position: absolute;
+      z-index: 1000;
+      top: 12px;
+      left: 60px;
+      padding: 10px 14px;
+      background: white;
+      border-radius: 6px;
+      box-shadow: 0 1px 5px #888;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="titulo">
+    <strong>Hospitales de Boyacá</strong><br>
+    <small>Mapa web con Leaflet y datos geográficos</small>
+  </div>
+
+  <div id="mapa"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const mapa = L.map("mapa").setView([5.54, -73.36], 8);
+
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(mapa);
+
+    const url =
+      "https://services6.arcgis.com/Ex2fmFOuTOHRZtML/ArcGIS/rest/services/" +
+      "Hospitales_Boyac%C3%A1/FeatureServer/0/query" +
+      "?where=1%3D1&outFields=*&outSR=4326&f=geojson";
+
+    fetch(url)
+      .then(respuesta => {
+        if (!respuesta.ok) {
+          throw new Error("Error HTTP: " + respuesta.status);
+        }
+        return respuesta.json();
+      })
+      .then(geojson => {
+        if (geojson.error) {
+          throw new Error(JSON.stringify(geojson.error));
+        }
+
+        const hospitales = L.geoJSON(geojson, {
+          pointToLayer: (feature, latlng) =>
+            L.circleMarker(latlng, {
+              radius: 5,
+              color: "#9b2226",
+              fillColor: "#e76f51",
+              fillOpacity: 0.85,
+              weight: 1
+            }),
+
+          onEachFeature: (feature, layer) => {
+            const propiedades = feature.properties || {};
+            const nombre = propiedades.Nombre || "Hospital sin nombre";
+            const municipio = propiedades.NOM_MPIO || "Municipio no disponible";
+
+            layer.bindPopup(
+              `<strong>${nombre}</strong><br>${municipio}`
+            );
+          }
+        }).addTo(mapa);
+
+        if (hospitales.getLayers().length > 0) {
+          mapa.fitBounds(hospitales.getBounds(), { padding: [20, 20] });
+        }
+
+        console.log("Entidades recibidas:", hospitales.getLayers().length);
+      })
+      .catch(error => {
+        console.error("No fue posible cargar los hospitales:", error);
+        alert("No se pudieron cargar los hospitales. Revisa la consola del navegador.");
+      });
+  </script>
+</body>
+</html>
