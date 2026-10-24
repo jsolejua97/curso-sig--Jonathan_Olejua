@@ -16,7 +16,7 @@ base = {
 
 features = []
 offset = 0
-bloque = 1000
+bloque = 500
 
 while True:
     params = {
