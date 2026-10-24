@@ -1,0 +1,10 @@
+# Datos geograficos pesados
+*.gpkg
+datos/*.geojson
+!datos/hospitales_boyaca.geojson
+
+# Credenciales y entornos
+.env
+venv/
+__pycache__/
+node_modules/
