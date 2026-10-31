@@ -4,8 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Veredas de Boyacá | Mapa SIG</title>
+  <title>Veredas y Hospitales de Boyacá | Mapa SIG</title>
 
+  <!-- Librería Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -38,6 +39,7 @@
       padding: 10px 16px;
       background: white;
       font-size: 14px;
+      line-height: 1.6;
     }
 
     #mapa {
@@ -45,28 +47,60 @@
       height: calc(100vh - 112px);
       min-height: 400px;
     }
+
+    /* Estilo de los marcadores de hospitales */
+    .marcador-hospital {
+      background: #dc3545;
+      border: 2px solid white;
+      border-radius: 50%;
+      width: 12px;
+      height: 12px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.5);
+    }
+
+    /* Estilo de las ventanas emergentes */
+    .leaflet-popup-content {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .leaflet-popup-content strong {
+      color: #245c43;
+    }
   </style>
 </head>
 
 <body>
+
   <header>
-    <h1>Veredas de Boyacá</h1>
-    <p>Visualizador geográfico de límites veredales</p>
+    <h1>Veredas y Hospitales de Boyacá</h1>
+    <p>Visualizador geográfico de información territorial y equipamientos de salud</p>
   </header>
 
-  <div id="estado">Inicializando mapa...</div>
+  <div id="estado">
+    Inicializando mapa y consultando servicios geográficos...
+  </div>
+
   <div id="mapa"></div>
 
+  <!-- Librería JavaScript Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+
+    // =====================================================
+    // 1. INICIALIZACIÓN DEL MAPA
+    // =====================================================
+
     const estado = document.getElementById("estado");
 
-    // 1. Crear el mapa de Leaflet
     const mapa = L.map("mapa").setView([5.54, -73.36], 8);
 
-    // 2. Mapa base de Esri: no requiere que generes una API key
-    // para este servicio público de mapas.
+
+    // =====================================================
+    // 2. MAPA BASE ESRI
+    // =====================================================
+
     const mapaBase = L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
       {
@@ -77,19 +111,24 @@
       }
     ).addTo(mapa);
 
-    mapaBase.on("tileerror", function () {
-      estado.textContent =
-        "El mapa base no pudo cargar algunas imágenes. " +
-        "Verifica tu conexión o las restricciones de acceso.";
-    });
 
-    // 3. Servicio de polígonos de veredas de Boyacá
-    const baseUrl =
+    // =====================================================
+    // 3. CREACIÓN DE CAPAS TEMÁTICAS
+    // =====================================================
+
+    const capaVeredas = L.featureGroup();
+    const capaHospitales = L.featureGroup();
+
+
+    // =====================================================
+    // 4. SERVICIO GEOGRÁFICO DE VEREDAS
+    // =====================================================
+
+    const urlVeredas =
       "https://services6.arcgis.com/Ex2fmFOuTOHRZtML/ArcGIS/rest/services/" +
       "Veredas_Boyaca_2024/FeatureServer/0/query";
 
-    // 4. Parámetros de consulta
-    const parametros = new URLSearchParams({
+    const parametrosVeredas = new URLSearchParams({
       where: "1=1",
       outFields: "*",
       returnGeometry: "true",
@@ -98,32 +137,41 @@
       resultRecordCount: "2000"
     });
 
-    const url = baseUrl + "?" + parametros.toString();
+    const consultaVeredas =
+      urlVeredas + "?" + parametrosVeredas.toString();
 
-    // 5. Consultar las veredas
-    fetch(url)
-      .then(async function (respuesta) {
+
+    // =====================================================
+    // 5. CONSULTA Y REPRESENTACIÓN DE VEREDAS
+    // =====================================================
+
+    const promesaVeredas = fetch(consultaVeredas)
+
+      .then(async function(respuesta) {
+
         if (!respuesta.ok) {
           throw new Error("HTTP " + respuesta.status);
         }
 
         return await respuesta.json();
+
       })
-      .then(function (datos) {
+
+      .then(function(datos) {
+
         if (datos.error) {
           throw new Error(
-            datos.error.message || "Error del servicio ArcGIS"
+            datos.error.message || "Error en el servicio de veredas"
           );
         }
 
         if (!datos.features || datos.features.length === 0) {
-          estado.textContent = "La consulta no devolvió veredas.";
-          return;
+          throw new Error("La consulta no devolvió veredas");
         }
 
-        // 6. Dibujar los polígonos
-        const capaVeredas = L.geoJSON(datos, {
-          style: function () {
+        const capaGeoVeredas = L.geoJSON(datos, {
+
+          style: function() {
             return {
               color: "#247447",
               weight: 1,
@@ -132,16 +180,20 @@
             };
           },
 
-          onEachFeature: function (feature, layer) {
+          onEachFeature: function(feature, layer) {
+
             const p = feature.properties || {};
 
             const contenido =
               "<strong>Vereda:</strong> " +
               (p.NOMBRE_VER || "No disponible") +
+
               "<br><strong>Municipio:</strong> " +
               (p.NOMB_MPIO || "No disponible") +
+
               "<br><strong>Departamento:</strong> " +
               (p.NOM_DEP || "Boyacá") +
+
               (p.AREA_HA != null
                 ? "<br><strong>Área (ha):</strong> " +
                   Number(p.AREA_HA).toLocaleString("es-CO")
@@ -149,24 +201,214 @@
 
             layer.bindPopup(contenido);
           }
-        }).addTo(mapa);
 
-        // 7. Ajustar el mapa a los polígonos
-        if (capaVeredas.getLayers().length > 0) {
-          mapa.fitBounds(capaVeredas.getBounds());
+        });
+
+        capaVeredas.addLayer(capaGeoVeredas);
+
+        return datos.features.length;
+
+      });
+
+
+    // =====================================================
+    // 6. SERVICIO GEOGRÁFICO DE HOSPITALES
+    // =====================================================
+
+    const urlHospitales =
+      "https://services6.arcgis.com/Ex2fmFOuTOHRZtML/ArcGIS/rest/services/" +
+      "Hospitales_Boyac%C3%A1/FeatureServer/0/query";
+
+    const parametrosHospitales = new URLSearchParams({
+      where: "1=1",
+      outFields: "*",
+      returnGeometry: "true",
+      outSR: "4326",
+      f: "geojson"
+    });
+
+    const consultaHospitales =
+      urlHospitales + "?" + parametrosHospitales.toString();
+
+
+    // =====================================================
+    // 7. CONSULTA Y REPRESENTACIÓN DE HOSPITALES
+    // =====================================================
+
+    const promesaHospitales = fetch(consultaHospitales)
+
+      .then(async function(respuesta) {
+
+        if (!respuesta.ok) {
+          throw new Error("HTTP " + respuesta.status);
         }
 
-        estado.textContent =
-          "Veredas cargadas: " + datos.features.length +
-          (datos.features.length >= 2000
-            ? ". La consulta puede tener más registros."
-            : ".");
+        return await respuesta.json();
+
       })
-      .catch(function (error) {
-        console.error("Error al cargar las veredas:", error);
-        estado.textContent =
-          "Error al cargar las veredas: " + error.message;
+
+      .then(function(datos) {
+
+        if (datos.error) {
+          throw new Error(
+            datos.error.message || "Error en el servicio de hospitales"
+          );
+        }
+
+        if (!datos.features || datos.features.length === 0) {
+          throw new Error("La consulta no devolvió hospitales");
+        }
+
+        // Crear marcadores para cada hospital
+        const capaGeoHospitales = L.geoJSON(datos, {
+
+          pointToLayer: function(feature, latlng) {
+
+            return L.marker(latlng, {
+              icon: L.divIcon({
+                className: "",
+                html: '<div class="marcador-hospital"></div>',
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+              })
+            });
+
+          },
+
+          onEachFeature: function(feature, layer) {
+
+            const p = feature.properties || {};
+
+            const contenido =
+
+              "<strong>Hospital:</strong> " +
+              (p.Nombre || "No disponible") +
+
+              "<br><strong>Municipio:</strong> " +
+              (p.NOM_MPIO || "No disponible") +
+
+              "<br><strong>Dirección:</strong> " +
+              (p.Direccion || "No disponible") +
+
+              "<br><strong>Prestador:</strong> " +
+              (p.NombrePres || "No disponible") +
+
+              "<br><strong>Teléfono:</strong> " +
+              (p.Telefono || "No disponible") +
+
+              "<br><strong>Barrio:</strong> " +
+              (p.Barrio || "No disponible") +
+
+              "<br><strong>Código de habilitación:</strong> " +
+              (p.CodigoHabi || "No disponible");
+
+            layer.bindPopup(contenido);
+
+          }
+
+        });
+
+        capaHospitales.addLayer(capaGeoHospitales);
+
+        return datos.features.length;
+
       });
+
+
+    // =====================================================
+    // 8. CONTROL DE CAPAS
+    // =====================================================
+
+    const capasTematicas = {
+      "Veredas de Boyacá": capaVeredas,
+      "Hospitales de Boyacá": capaHospitales
+    };
+
+    L.control.layers(
+      {
+        "Mapa base Esri": mapaBase
+      },
+      capasTematicas,
+      {
+        collapsed: false
+      }
+    ).addTo(mapa);
+
+
+    // =====================================================
+    // 9. CARGA DE LOS SERVICIOS Y AJUSTE DEL MAPA
+    // =====================================================
+
+    Promise.allSettled([
+      promesaVeredas,
+      promesaHospitales
+    ])
+
+    .then(function(resultados) {
+
+      const resultadoVeredas = resultados[0];
+      const resultadoHospitales = resultados[1];
+
+      const mensajes = [];
+
+      if (resultadoVeredas.status === "fulfilled") {
+
+        capaVeredas.addTo(mapa);
+
+        mensajes.push(
+          "Veredas cargadas: " + resultadoVeredas.value
+        );
+
+      } else {
+
+        console.error(
+          "Error al cargar las veredas:",
+          resultadoVeredas.reason
+        );
+
+        mensajes.push(
+          "Error en veredas: " + resultadoVeredas.reason.message
+        );
+
+      }
+
+      if (resultadoHospitales.status === "fulfilled") {
+
+        capaHospitales.addTo(mapa);
+
+        mensajes.push(
+          "Hospitales cargados: " + resultadoHospitales.value
+        );
+
+      } else {
+
+        console.error(
+          "Error al cargar los hospitales:",
+          resultadoHospitales.reason
+        );
+
+        mensajes.push(
+          "Error en hospitales: " + resultadoHospitales.reason.message
+        );
+
+      }
+
+      // Ajustar la vista a las veredas
+      if (resultadoVeredas.status === "fulfilled") {
+
+        if (capaVeredas.getLayers().length > 0) {
+
+          mapa.fitBounds(capaVeredas.getBounds());
+
+        }
+
+      }
+
+      estado.innerHTML = mensajes.join("<br>");
+
+    });
+
   </script>
+
 </body>
 </html>
